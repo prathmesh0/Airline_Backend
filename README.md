@@ -2,7 +2,7 @@
 
 A backend service for an **Airline Management System**, built with [Node.js](https://nodejs.org/) and [Express 5](https://expressjs.com/). The project follows a clean, layered architecture (routes → controllers → services → repositories) that keeps concerns separated and makes the codebase easy to scale as new features are added.
 
-> **Status:** Early scaffolding. The base structure, configuration, logging, and a sample `info` endpoint are in place. Business logic (services, repositories, database models) is not yet implemented.
+> **Status:** Early scaffolding. The base structure, configuration, logging, database ORM (Sequelize), and a sample `info` endpoint are in place. Business logic (services, repositories) and database models are being added.
 
 ---
 
@@ -12,6 +12,7 @@ A backend service for an **Airline Management System**, built with [Node.js](htt
 - [Getting Started](#getting-started)
 - [Available Scripts](#available-scripts)
 - [Environment Variables](#environment-variables)
+- [Database](#database)
 - [Folder Structure](#folder-structure)
 - [Architecture Overview](#architecture-overview)
 - [API Reference](#api-reference)
@@ -25,12 +26,15 @@ A backend service for an **Airline Management System**, built with [Node.js](htt
 | ---------------- | ------------------- | ---------------------------------------------- |
 | Runtime          | Node.js             | JavaScript runtime                             |
 | Web Framework    | `express` (v5)      | HTTP server and routing                        |
+| Database ORM     | `sequelize`         | SQL ORM for MySQL                              |
+| Database Driver  | `mysql2`            | MySQL database driver                          |
 | Configuration    | `dotenv`            | Loads environment variables from `.env`        |
 | Logging          | `winston`           | Structured logging to console and file         |
 | HTTP Helpers     | `http-status-codes` | Human-readable HTTP status code constants      |
 | Dev Server       | `nodemon`           | Auto-restart on file changes                   |
 | Linting          | `eslint`            | Static code analysis                           |
 | Formatting       | `prettier`          | Consistent code formatting                     |
+| Migrations       | `sequelize-cli`     | Database migrations and seeders                |
 
 ---
 
@@ -40,6 +44,7 @@ A backend service for an **Airline Management System**, built with [Node.js](htt
 
 - **Node.js** (LTS recommended)
 - **npm** (ships with Node.js)
+- **MySQL** (8.0+ recommended)
 
 ### Installation
 
@@ -58,6 +63,11 @@ Create a `.env` file in the project root (see [Environment Variables](#environme
 
 ```env
 PORT=3000
+DB_USERNAME=root
+DB_PASSWORD=
+DB_NAME=airline_db
+DB_HOST=127.0.0.1
+DB_DIALECT=mysql
 ```
 
 ### Running the Server
@@ -89,11 +99,51 @@ curl http://localhost:3000/api/v1/info
 
 ## Environment Variables
 
-| Variable | Description                     | Example |
-| -------- | ------------------------------- | ------- |
-| `PORT`   | Port the HTTP server binds to   | `3000`  |
+| Variable       | Description                         | Example               |
+| -------------- | --------------------------------- | --------------------- |
+| `PORT`         | Port the HTTP server binds to     | `3000`                |
+| `DB_USERNAME`  | MySQL username                    | `root`                |
+| `DB_PASSWORD`  | MySQL password                    |                       |
+| `DB_NAME`      | MySQL database name               | `airline_db`          |
+| `DB_HOST`      | MySQL host                        | `127.0.0.1`          |
+| `DB_DIALECT`   | Database dialect                  | `mysql`               |
 
 > The `.env` file is git-ignored. Never commit secrets to version control.
+
+---
+
+## Database
+
+The project uses **MySQL** with **Sequelize ORM**. Database connection settings are configured in `src/config/config.json` for development, test, and production environments.
+
+### Setting Up the Database
+
+1. Ensure MySQL is running on your system.
+2. Create the database:
+   ```bash
+   npx sequelize-cli db:create
+   ```
+3. Run pending migrations (once migrations are added):
+   ```bash
+   npx sequelize-cli db:migrate
+   ```
+4. (Optional) Seed the database:
+   ```bash
+   npx sequelize-cli db:seed:all
+   ```
+
+### Generating Migrations & Models
+
+```bash
+# Generate a model (creates model file + migration)
+npx sequelize-cli model:generate --name Airplane --attributes modelName:string,capacity:integer
+
+# Generate a migration file
+npx sequelize-cli migration:generate --name add-new-column
+
+# Generate a seeder file
+npx sequelize-cli seed:generate --name demo-airplanes
+```
 
 ---
 
@@ -105,7 +155,8 @@ Airline Backend/
 │   ├── config/               # App configuration & third-party setup
 │   │   ├── index.js          # Barrel export for all config modules
 │   │   ├── server-config.js  # Loads env vars (PORT, etc.) via dotenv
-│   │   └── logger-config.js  # Winston logger (console + combined.log)
+│   │   ├── logger-config.js  # Winston logger (console + combined.log)
+│   │   └── config.json       # Sequelize database connection config
 │   │
 │   ├── controllers/          # Request handlers (parse req, send res)
 │   │   ├── index.js          # Barrel export for all controllers
@@ -125,6 +176,13 @@ Airline Backend/
 │   ├── repositories/         # Data-access layer (DB queries)
 │   │   └── index.js          # Barrel export (placeholder)
 │   │
+│   ├── models/               # Sequelize model definitions
+│   │   └── index.js          # Model loader (auto-imports all models)
+│   │
+│   ├── migrations/           # Database migration files
+│   │
+│   ├── seeders/              # Database seeder files
+│   │
 │   └── index.js              # App entry point — creates & starts Express
 │
 ├── .env                      # Environment variables (git-ignored)
@@ -141,7 +199,7 @@ Airline Backend/
 
 ## Architecture Overview
 
-The project uses a **layered (MVC-inspired) architecture**. A request flows through each layer in a single direction, keeping responsibilities isolated:
+The project uses a **layered (MVC-inspired) architecture** with **Sequelize ORM** for database access. A request flows through each layer in a single direction, keeping responsibilities isolated:
 
 ```
    HTTP Request
@@ -162,12 +220,20 @@ The project uses a **layered (MVC-inspired) architecture**. A request flows thro
 ┌───────────────┐   Data access — talks to the database
 │ Repositories  │   (to be implemented).
 └───────────────┘
+         ▼
+┌───────────────┐
+│  Database /   │   Database interaction via Sequelize models.
+│  Models       │   Migrations and seeders managed by Sequelize CLI.
+└───────────────┘
 ```
 
 **Supporting layers:**
 
-- **`config/`** — Centralizes environment configuration (`server-config.js`) and the Winston logger (`logger-config.js`). All config is re-exported through `config/index.js` for clean imports.
+- **`config/`** — Centralizes environment configuration (`server-config.js`), the Winston logger (`logger-config.js`), and Sequelize database config (`config.json`). All config is re-exported through `config/index.js` for clean imports.
 - **`middlewares/`** — Reusable Express middleware such as request validation, authentication, and error handling.
+- **`models/`** — Sequelize model definitions. The `index.js` auto-loads all model files and sets up associations.
+- **`migrations/`** — Database migration files for version-controlled schema changes.
+- **`seeders/`** — Database seeder files for populating test or default data.
 
 **Barrel exports:** Each folder has an `index.js` that re-exports its modules, so imports stay tidy — e.g. `const { ServerConfig, Logger } = require('./config');`.
 

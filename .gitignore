@@ -124,3 +124,5 @@ junit.xml
 
 # Uncomment if using Bun
 # bun.lockb
+
+src/config/config.json
